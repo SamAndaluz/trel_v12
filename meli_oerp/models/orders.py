@@ -19,7 +19,7 @@
 #
 ##############################################################################
 
-from odoo import fields, osv, models, api
+from odoo import fields, osv, models, api, exceptions
 import logging
 from .meli_oerp_config import *
 
@@ -265,17 +265,27 @@ class mercadolibre_orders(models.Model):
 
         if 'buyer' in order_json:
             Buyer = order_json['buyer']
+            _logger.info( "Buyer")
+            _logger.info(Buyer)
             Receiver = False
             if ('shipping' in order_json):
                 if ('receiver_address' in order_json['shipping']):
                     Receiver = order_json['shipping']['receiver_address']
+            
+            buyer_phone = ''
+            buyer_alternative_phone = ''
+            if 'phone' in Buyer:
+                buyer_phone = Buyer['phone']
+            if 'alternative_phone' in Buyer:
+                buyer_alternative_phone = Buyer['alternative_phone']
+                
             meli_buyer_fields = {
                 'name': Buyer['first_name']+' '+Buyer['last_name'],
                 'street': self.street(Receiver),
                 'city': self.city(Receiver),
                 'country_id': self.country(Receiver),
                 'state_id': self.state(self.country(Receiver),Receiver),
-                'phone': self.full_phone( Buyer['phone']),
+                'phone': self.full_phone(buyer_phone),
                 'email': Buyer['email'],
                 'meli_buyer_id': Buyer['id']
             }
@@ -285,8 +295,8 @@ class mercadolibre_orders(models.Model):
                 'buyer_id': Buyer['id'],
                 'nickname': Buyer['nickname'],
                 'email': Buyer['email'],
-                'phone': self.full_phone( Buyer['phone']),
-                'alternative_phone': self.full_phone( Buyer['alternative_phone']),
+                'phone': self.full_phone(buyer_phone),
+                'alternative_phone': self.full_phone(buyer_alternative_phone),
                 'first_name': Buyer['first_name'],
                 'last_name': Buyer['last_name'],
                 'billing_info': self.billing_info(Buyer['billing_info']),
@@ -666,7 +676,7 @@ class mercadolibre_orders(models.Model):
 
 
     def orders_query_iterate( self, offset=0, context=None ):
-
+        
         offset_next = 0
 
         company = self.env.user.company_id
@@ -682,7 +692,8 @@ class mercadolibre_orders(models.Model):
         meli = Meli(client_id=CLIENT_ID,client_secret=CLIENT_SECRET, access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN )
 
         orders_query = "/orders/search?seller="+company.mercadolibre_seller_id+"&sort=date_desc"
-
+        #raise exceptions.ValidationError(str(orders_query))
+        
         if (offset):
             orders_query = orders_query + "&offset="+str(offset).strip()
 
@@ -707,7 +718,7 @@ class mercadolibre_orders(models.Model):
         if "results" in orders_json:
             for order_json in orders_json["results"]:
                 if order_json:
-                    #_logger.info( order_json )
+                    _logger.info( order_json )
                     pdata = {"id": False, "order_json": order_json}
                     try:
                         self.orders_update_order_json( pdata )
@@ -723,11 +734,13 @@ class mercadolibre_orders(models.Model):
         return {}
 
     def orders_query_recent( self ):
-
+        
         self._cr.autocommit(False)
-
+        
         try:
+            
             self.orders_query_iterate( 0 )
+            
         except Exception as e:
             _logger.info("orders_query_recent > Error iterando ordenes")
             _logger.error(e, exc_info=True)
